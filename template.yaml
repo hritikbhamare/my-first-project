@@ -1,0 +1,189 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: 'SFDC Event Handler Lambda Function with LOB API Integration'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - prod
+    Description: Deployment environment
+
+  TableName:
+    Type: String
+    Description: DynamoDB table name for event logs
+
+  EnvName:
+    Type: String
+    Description: Environment name for SFDC auth key lookup
+
+  HostName:
+    Type: String
+    Description: LOB API hostname
+
+  EmailPath:
+    Type: String
+    Description: LOB API email endpoint path
+
+  CrmPath:
+    Type: String
+    Description: SFDC API composite request path
+
+  SfApiVersion:
+    Type: String
+    Default: v62.0
+    Description: Salesforce API version
+
+  LoopLength:
+    Type: Number
+    Default: 5
+    Description: Number of attachments to loop through
+
+Globals:
+  Function:
+    Timeout: 900
+    MemorySize: 512
+    Runtime: nodejs18.x
+    Tracing: Active
+    EphemeralStorage:
+      Size: 512
+    Environment:
+      Variables:
+        tablename: !Ref TableName
+        envname: !Ref EnvName
+        hostname: !Ref HostName
+        path: !Ref EmailPath
+        crmpath: !Ref CrmPath
+        sfdc_api_version: !Ref SfApiVersion
+        loopLength: !Ref LoopLength
+        STAGE: !Ref Environment
+        AWS_REGION: !Ref AWS::Region
+        isdebug: 'false'
+
+Resources:
+  # Lambda Function
+  SFDCEventHandlerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub 'sfdc-event-handler-${Environment}'
+      CodeUri: .
+      Handler: index.handler
+      Description: Handles SFDC events and integrates with LOB API
+      ReservedConcurrentExecutions: 100
+      
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TableName
+        - CloudWatchPutMetricPolicy: {}
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - logs:CreateLogGroup
+                - logs:CreateLogStream
+                - logs:PutLogEvents
+              Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/sfdc-event-handler-${Environment}:*'
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${EnvName}_sfdc_auth*'
+            - Effect: Allow
+              Action:
+                - kms:Decrypt
+              Resource: !Sub 'arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/*'
+              Condition:
+                StringEquals:
+                  'kms:ViaService':
+                    - !Sub 'secretsmanager.${AWS::Region}.amazonaws.com'
+
+      Events:
+        SFDCEventBridgeRule:
+          Type: EventBridge
+          Properties:
+            Pattern:
+              source:
+                - salesforce.events
+              detail-type:
+                - Communication Event
+
+  # CloudWatch Log Group
+  FunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/sfdc-event-handler-${Environment}'
+      RetentionInDays: '7'
+
+  # CloudWatch Alarms
+  FunctionErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'sfdc-event-handler-errors-${Environment}'
+      AlarmDescription: Alert when Lambda function has errors
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SFDCEventHandlerFunction
+      TreatMissingData: notBreaching
+
+  FunctionDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'sfdc-event-handler-duration-${Environment}'
+      AlarmDescription: Alert when Lambda function duration is high
+      MetricName: Duration
+      Namespace: AWS/Lambda
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 30000  # 30 seconds
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SFDCEventHandlerFunction
+      TreatMissingData: notBreaching
+
+  FunctionThrottlesAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub 'sfdc-event-handler-throttles-${Environment}'
+      AlarmDescription: Alert when Lambda function is throttled
+      MetricName: Throttles
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref SFDCEventHandlerFunction
+      TreatMissingData: notBreaching
+
+Outputs:
+  FunctionArn:
+    Description: ARN of the Lambda function
+    Value: !GetAtt SFDCEventHandlerFunction.Arn
+    Export:
+      Name: !Sub '${Environment}-SFDC-Event-Handler-ARN'
+
+  FunctionName:
+    Description: Name of the Lambda function
+    Value: !Ref SFDCEventHandlerFunction
+    Export:
+      Name: !Sub '${Environment}-SFDC-Event-Handler-Name'
+
+  LogGroupName:
+    Description: CloudWatch Log Group name
+    Value: !Ref FunctionLogGroup
+    Export:
+      Name: !Sub '${Environment}-SFDC-Event-Handler-LogGroup'
