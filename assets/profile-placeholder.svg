@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320" role="img" aria-labelledby="title desc">
+  <title id="title">Hritik Bhamare profile placeholder</title>
+  <desc id="desc">A clean professional placeholder portrait with the initials HB.</desc>
+  <defs>
+    <linearGradient id="bg" x1="48" y1="24" x2="272" y2="296" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#155e75"/>
+      <stop offset="1" stop-color="#b45309"/>
+    </linearGradient>
+  </defs>
+  <rect width="320" height="320" rx="26" fill="url(#bg)"/>
+  <circle cx="160" cy="124" r="58" fill="#ffffff" opacity="0.92"/>
+  <path d="M64 274c12-58 48-88 96-88s84 30 96 88" fill="#ffffff" opacity="0.92"/>
+  <rect x="64" y="232" width="192" height="44" rx="22" fill="#0f3f50" opacity="0.18"/>
+  <text x="160" y="290" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="800" text-anchor="middle">HB</text>
+</svg>
